@@ -2,12 +2,51 @@
 
 import os
 import time
+from functools import wraps
+from hmac import compare_digest
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, Response
 from prometheus_flask_exporter import PrometheusMetrics
 
+def metrics_auth_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        expected_username = os.getenv("METRICS_USERNAME")
+        expected_password = os.getenv("METRICS_PASSWORD")
+        auth = request.authorization
+
+        if not expected_username or not expected_password:
+            return Response(
+                "Metrics authentication is not configured",
+                status=503
+            )
+
+        username_ok = auth and compare_digest(
+            auth.username or "",
+            expected_username
+        )
+
+        password_ok = auth and compare_digest(
+            auth.password or "",
+            expected_password
+        )
+
+        if not username_ok or not password_ok:
+            return Response(
+                "Unauthorized",
+                status=401,
+                headers={"WWW-Authenticate": 'Basic realm="metrics"'}
+            )
+
+        return func(*args, **kwargs)
+
+    return wrapper
+
 app = Flask(__name__)
-metrics = PrometheusMetrics(app)
+metrics = PrometheusMetrics(
+    app,
+    metrics_decorator=metrics_auth_required
+)
 
 @app.get("/")
 def home():
