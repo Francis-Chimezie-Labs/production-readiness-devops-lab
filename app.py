@@ -42,6 +42,31 @@ def metrics_auth_required(func):
 
     return wrapper
 
+##             the failure-test security function
+
+
+def failure_test_auth_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if os.getenv("ENABLE_FAILURE_TESTS") != "true":
+            return jsonify(error="Failure testing disabled"), 403
+
+        expected_token = os.getenv("FAILURE_TEST_TOKEN")
+        provided_token = request.headers.get("X-Failure-Test-Token", "")
+
+        if not expected_token:
+            return jsonify(error="Failure test authentication is not configured"), 503
+
+        if not compare_digest(provided_token, expected_token):
+            return jsonify(error="Unauthorized"), 401
+
+        return func(*args, **kwargs)
+
+    return wrapper
+
+#######
+
+
 app = Flask(__name__)
 metrics = PrometheusMetrics(
     app,
@@ -69,23 +94,21 @@ def health():
     
     ##   Add a controlled 500 error endpoint
     
+    
 @app.get("/test-error")
+@failure_test_auth_required
 def test_error():
-    if os.getenv("ENABLE_FAILURE_TESTS") != "true":
-        return jsonify(error="Failure testing disabled"), 403
-
     raise RuntimeError("Controlled staging failure")
 
 
 ##      Add a controlled slow endpoint
 
+
 @app.get("/test-slow")
+@failure_test_auth_required
 def test_slow():
-    if os.getenv("ENABLE_FAILURE_TESTS") != "true":
-        return jsonify(error="Failure testing disabled"), 403
-
     time.sleep(3)
-
+    
     return jsonify(
         status="ok",
         message="Controlled slow request completed"
