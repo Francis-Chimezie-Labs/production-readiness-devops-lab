@@ -107,9 +107,4 @@ def test_error():
 @app.get("/test-slow")
 @failure_test_auth_required
 def test_slow():
-    time.sleep(3)
-    
-    return jsonify(
-        status="ok",
-        message="Controlled slow request completed"
-    )
+    raise RuntimeError("Controlled bad release for rollback rehearsal")
